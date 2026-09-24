@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { width: 330px; font-family: Arial,sans-serif; color:#09245b; margin:0; padding:18px; }
+    h3 { margin:0; font-size:21px; } .top{display:flex;justify-content:space-between;align-items:center}
+    .count{font-weight:bold;margin:22px 0 10px}.query-item { padding:12px 0; border-top:1px solid #e3eaf5; font-size:13px; position:relative; padding-right:75px; }
+    .email{display:block;color:#57709e;margin-top:4px}.badge{position:absolute;right:0;top:16px;border:1px solid #ee8500;color:#d97000;border-radius:5px;padding:2px 5px;font-weight:bold}.in-progress{border-color:#1261e7;color:#1261e7}
+    .buttons{display:flex;gap:10px;margin-top:14px} button { flex:1; padding:10px; cursor:pointer; border-radius:7px; border:1px solid #1460e8; font-weight:bold; color:#1460e8; background:#fff } #open-dashboard{background:#1460e8;color:#fff}
+  </style>
+</head>
+<body>
+  <div class="top"><h3>✉ Smart Query Router</h3><span>🔔</span></div>
+  <p id="query-count" class="count">Loading queries…</p>
+  <div id="query-list"></div>
+  <div class="buttons"><button id="refresh">↻ Refresh</button><button id="open-dashboard">Open Dashboard</button></div>
+  <script src="popup.js"></script>
+</body>
+</html>
