@@ -97,7 +97,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         origin.strip()
-        for origin in os.getenv("FRONTEND_ORIGINS", "http://localhost:5173").split(",")
+        for origin in os.getenv("FRONTEND_ORIGINS", "https://smart-query-dashboard.onrender.com,chrome-extension://jnoefnjnodfbjmkbilebmifojgodocml").split(",")
         if origin.strip()
     ],
     allow_methods=["*"],
