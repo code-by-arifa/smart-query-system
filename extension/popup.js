@@ -1,4 +1,4 @@
-const API = "https://smart-query-system.onrender.com/*";
+const API = "https://smart-query-system.onrender.com";
 
 function loadQueries() { 
 chrome.storage.local.get(["access_token"], ({ access_token }) => fetch(`${API}/api/queries?status=Pending`, {
@@ -42,5 +42,5 @@ loadQueries();
 document.getElementById("refresh").addEventListener("click", loadQueries);
 
 document.getElementById("open-dashboard").addEventListener("click", () => {
-  chrome.tabs.create({ url: "https://smart-query-dashboard.onrender.com,chrome-extension://jnoefnjnodfbjmkbilebmifojgodocml" });
+  chrome.tabs.create({ url: "https://smart-query-dashboard.onrender.com,chrome-extension//jnoefnjnodfbjmkbilebmifojgodocml" });
 });

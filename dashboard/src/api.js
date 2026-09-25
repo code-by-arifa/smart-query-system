@@ -1,4 +1,4 @@
-export const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
+export const API = import.meta.env.VITE_API_URL || "https://smart-query-system.onrender.com";
 
 export async function request(path, options = {}) {
   const token = localStorage.getItem("access_token");

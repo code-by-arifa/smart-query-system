@@ -19,10 +19,10 @@
       "128": "icons/icon128.png"
     }
   },
-  "host_permissions": ["https://smart-query-system.onrender.com/*"],
+  "host_permissions": ["https://smart-query-system.onrender.com"],
   "content_scripts": [
     {
-      "matches": ["https://smart-query-dashboard.onrender.com,chrome-extension://jnoefnjnodfbjmkbilebmifojgodocml*"],
+      "matches": ["https://smart-query-dashboard.onrender.com,chrome-extension//jnoefnjnodfbjmkbilebmifojgodocml"],
       "js": ["bridge.js"]
     }
   ]
