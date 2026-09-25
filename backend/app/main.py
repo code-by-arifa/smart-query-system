@@ -115,6 +115,10 @@ def check_for_escalations():
             "status": "Escalated",
             "escalated_to_role": "HOD",
         }).eq("query_id", q["query_id"]).execute()
+        supabase.table("escalation_record").insert({
+            "query_id": q["query_id"],
+            "reason": "No response within 24 hours",
+        }).execute()
 
     print(f"Escalation check ran — {len(stuck.data)} quer(ies) escalated.")
 def classify_and_route(query_id: str, subject: str, query_text: str):
@@ -164,10 +168,6 @@ def poll_gmail():
 def health_check():
     return {"status": "running"}
 
-@app.get("/api/query/{query_id}")
-def get_query(query_id: str, user=Depends(user_from_claims)):
-    return query_visible_to(query_id, user)
-
 class QueryCreate(BaseModel):
     student_email: EmailStr
     subject: str
@@ -211,9 +211,6 @@ def login(payload: dict):
 @app.post("/api/query/classify")
 def classify(query_id: str, user=Depends(user_from_claims)):
     q = query_visible_to(query_id, user)
-
-    print("SUBJECT SENT TO AI:", q["subject"])
-    print("BODY SENT TO AI:", q["query_text"])
 
     try:
         result = classify_query(q["subject"], q["query_text"])
@@ -292,13 +289,6 @@ def route_query(query_id: str, user=Depends(user_from_claims)):
 def run_escalation_check_manually(_user=Depends(allow("Admin"))):
     check_for_escalations()
     return {"status": "escalation check completed"}
-@app.get("/api/queries")
-def list_queries(status: str = None, _user=Depends(user_from_claims)):
-    query = supabase.table("queries").select("*")
-    if status:
-        query = query.eq("status", status)
-    result = query.execute()
-    return result.data
 
 @app.get("/api/analytics/departments")
 def department_workload(_user=Depends(allow("Admin", "HOD"))):
@@ -318,10 +308,3 @@ if os.getenv("GMAIL_POLL_ENABLED", "false").lower() == "true":
     scheduler.add_job(poll_gmail, "interval", minutes=int(os.getenv("GMAIL_POLL_MINUTES", "3")))
 scheduler.start()
 
-@app.patch("/api/queries/{query_id}/assign-role")
-def reassign_role(query_id: str, payload: dict, _user=Depends(allow("Admin"))):
-    new_role = payload.get("assigned_role")
-    if new_role not in ["Department", "Instructor", "HOD", "Admin"]:
-        raise HTTPException(status_code=400, detail="Invalid role")
-    supabase.table("queries").update({"assigned_role": new_role}).eq("query_id", query_id).execute()
-    return {"status": "reassigned", "assigned_role": new_role}
