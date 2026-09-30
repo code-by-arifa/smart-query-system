@@ -62,7 +62,16 @@ def classify_query(subject: str, body: str) -> dict:
     )
     text = response.text.strip()
     text = text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-    return json.loads(text)
+    raw = json.loads(text)
+    matches = {c.lower(): c for c in CATEGORIES}
+    category = matches.get(str(raw.get("category", "")).strip().lower())
+    if category is None:
+        return {"category": "General", "confidence": 0.0}
+    try:
+        confidence = float(raw.get("confidence", 0))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    return {"category": category, "confidence": max(0.0, min(confidence, 1.0))}
 
 
 def generate_reply_draft(subject: str, body: str, category: str) -> str:
@@ -140,25 +149,30 @@ def poll_gmail():
     """Create, classify and route one database query for every unread Gmail message."""
     try:
         for message in unread_messages():
-            seen = supabase.table("queries").select("query_id").eq("gmail_message_id", message["gmail_message_id"]).execute()
-            if seen.data:
-                mark_read(message["gmail_message_id"])
-                continue
-            row = supabase.table("queries").insert({**message, "source": "gmail"}).execute().data[0]
-
             try:
-                send_reply(
-                    row["student_email"],
-                    row["subject"],
-                    "Thank you for contacting us. Your query has been received and is being reviewed. "
-                    "You will receive a follow-up email once it has been resolved.",
-                    row.get("gmail_thread_id"),
-                )
-            except Exception as e:
-                print("Acknowledgment email failed:", e)
+                seen = supabase.table("queries").select("query_id").eq("gmail_message_id", message["gmail_message_id"]).execute()
+                if seen.data:
+                    mark_read(message["gmail_message_id"])
+                    continue
 
-            classify_and_route(row["query_id"], row["subject"], row["query_text"])
-            mark_read(message["gmail_message_id"])
+                row = supabase.table("queries").insert({**message, "source": "gmail"}).execute().data[0]
+
+                try:
+                    send_reply(
+                        row["student_email"],
+                        row["subject"],
+                        "Thank you for contacting us. Your query has been received and is being reviewed. "
+                        "You will receive a follow-up email once it has been resolved.",
+                        row.get("gmail_thread_id"),
+                    )
+                except Exception as e:
+                    print("Acknowledgment email failed:", e)
+
+                classify_and_route(row["query_id"], row["subject"], row["query_text"])
+                mark_read(message["gmail_message_id"])
+            except Exception as exc:
+                print(f"Skipping message {message.get('gmail_message_id')}: {exc}")
+                continue
     except Exception as exc:
         print(f"Gmail polling skipped/failed: {exc}")
 
@@ -254,8 +268,21 @@ def send_approved_reply(payload: ReplySend, user=Depends(user_from_claims)):
         send_reply(query["student_email"], query["subject"], payload.body, query.get("gmail_thread_id"))
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    supabase.table("reply_history").insert({"query_id": payload.query_id, "generated_reply": payload.body, "sent_time": now_utc}).execute()
-    supabase.table("queries").update({"status": "Resolved", "resolved_at": now_utc}).eq("query_id", payload.query_id).execute()
+    except Exception as exc:
+        print("GMAIL SEND ERROR:", exc)
+        raise HTTPException(
+            status_code=502,
+            detail="The reply could not be sent through Gmail. Please try again.",
+        ) from exc
+    supabase.table("reply_history").insert({
+        "query_id": payload.query_id,
+        "generated_reply": payload.body,
+        "sent_time": now_utc,
+    }).execute()
+    supabase.table("queries").update({
+        "status": "Resolved",
+        "resolved_at": now_utc,
+    }).eq("query_id", payload.query_id).execute()
     return {"status": "sent"}
 
 def route_query_by_id(query_id: str):
@@ -303,8 +330,15 @@ def department_workload(_user=Depends(allow("Admin", "HOD"))):
 
     return counts
 scheduler = BackgroundScheduler()
-scheduler.add_job(check_for_escalations, "interval", hours=1)
+scheduler.add_job(
+    check_for_escalations, "interval", hours=1,
+    next_run_time=datetime.now(timezone.utc),
+)
 if os.getenv("GMAIL_POLL_ENABLED", "false").lower() == "true":
-    scheduler.add_job(poll_gmail, "interval", minutes=int(os.getenv("GMAIL_POLL_MINUTES", "3")))
+    scheduler.add_job(
+        poll_gmail, "interval",
+        minutes=int(os.getenv("GMAIL_POLL_MINUTES", "3")),
+        next_run_time=datetime.now(timezone.utc),
+    )
 scheduler.start()
 

@@ -1,3 +1,5 @@
+import os
+os.environ.setdefault("JWT_SECRET", "unit-test-secret-that-is-at-least-32-characters-long")
 import unittest
 from app.security import issue_session, current_user
 

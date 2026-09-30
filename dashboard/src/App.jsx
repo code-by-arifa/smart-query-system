@@ -686,66 +686,100 @@ export default function App() {
   const [departments, setDepartments] = useState([]);
 
   useEffect(() => {
-  if (!user) return;
-  request("/api/departments").then(setDepartments).catch(() => {});
-}, [user]);
+    if (!user) return;
+    request("/api/departments").then(setDepartments).catch(() => {});
+  }, [user]);
+
   const deptNameById = Object.fromEntries(departments.map((d) => [d.dept_id, d.dept_name]));
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
-    if (!token) { setCheckingSession(false); return; }
+    if (!token) {
+      setCheckingSession(false);
+      return;
+    }
+
     request("/api/auth/profile")
-      .then((u) => { setUser(u); setActive("Dashboard"); })
-      .catch(() => localStorage.removeItem("access_token"))
+      .then((u) => {
+        setUser(u);
+        setActive("Dashboard");
+        window.postMessage({ type: "smart-query-session", token }, window.location.origin);
+      })
+      .catch(() => {
+        localStorage.removeItem("access_token");
+        setUser(null);
+      })
       .finally(() => setCheckingSession(false));
   }, []);
+
   useEffect(() => {
-  if (!bulkMessage) return;
-  const timer = setTimeout(() => setBulkMessage(""), 5000);
-  return () => clearTimeout(timer);
-}, [bulkMessage]);
+    if (!bulkMessage) return;
+    const timer = setTimeout(() => setBulkMessage(""), 5000);
+    return () => clearTimeout(timer);
+  }, [bulkMessage]);
 
-const load = async (section = active) => {
-  try {
-    const s = await request("/api/dashboard/stats");
-    setStats(s);
-    if (section === "Escalated To HOD") {
-      setQueries(await request("/api/escalations?target=HOD"));
-    } else if (section === "Escalated To Me") {
-      setQueries(await request("/api/escalations?target=Admin"));
-    } else if (section === "Escalations") {
-      setQueries(await request("/api/escalations"));
-    } else if (section === "Reassigned") {
-      setQueries(await request("/api/reassigned"));
-    } else {
-      const all = await request("/api/queries");
-      setQueries(user.role === "HOD" || user.role === "Admin" ? all : all.filter((q) => q.status !== "Escalated" && q.status !== "Reassigned by HOD"));
+  const load = async (section = active) => {
+    try {
+      const s = await request("/api/dashboard/stats");
+      setStats(s);
+
+      if (section === "Escalated To HOD") {
+        setQueries(await request("/api/escalations?target=HOD"));
+      } else if (section === "Escalated To Me") {
+        setQueries(await request("/api/escalations?target=Admin"));
+      } else if (section === "Escalations") {
+        setQueries(await request("/api/escalations"));
+      } else if (section === "Reassigned") {
+        setQueries(await request("/api/reassigned"));
+      } else {
+        const all = await request("/api/queries");
+        setQueries(
+          user && (user.role === "HOD" || user.role === "Admin")
+            ? all
+            : all.filter((q) => q.status !== "Escalated" && q.status !== "Reassigned by HOD")
+        );
+      }
+    } catch (e) {
+      setError(e.message);
     }
-  } catch (e) {
-    setError(e.message);
-  }
-};
+  };
 
-const downloadReport = async () => {
-  const token = localStorage.getItem("access_token");
-  const res = await fetch(`${API}/api/reports/daily`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) { setError("Failed to generate report."); return; }
-  const blob = await res.blob();
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "daily_report.pdf";
-  a.click();
-  window.URL.revokeObjectURL(url);
-};
+  const downloadReport = async () => {
+    const token = localStorage.getItem("access_token");
+    const res = await fetch(`${API}/api/reports/daily`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      setError("Failed to generate report.");
+      return;
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "daily_report.pdf";
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
 
-useEffect(() => { if (user) load(active); }, [user, active]);
+  useEffect(() => {
+    if (user) load(active);
+  }, [user, active]);
 
   if (checkingSession) return <p style={{ padding: 24 }}>Loading session...</p>;
   if (!user) return <Login onLogin={setUser} />;
-  if (selected) return <Detail query={selected} back={() => setSelected(null)} reload={() => load(active)} user={user} departments={departments} deptNames={deptNameById} />;
+  if (selected) {
+    return (
+      <Detail
+        query={selected}
+        back={() => setSelected(null)}
+        reload={() => load(active)}
+        user={user}
+        departments={departments}
+        deptNames={deptNameById}
+      />
+    );
+  }
 
   const menu = menus[user.role] || menus.Instructor;
 
@@ -761,6 +795,7 @@ useEffect(() => { if (user) load(active); }, [user, active]);
         <button
           className="nav logout"
           onClick={() => {
+            window.postMessage({ type: "smart-query-session", token: null }, window.location.origin);
             localStorage.removeItem("access_token");
             setUser(null);
             setBulkMessage("");
@@ -777,29 +812,29 @@ useEffect(() => { if (user) load(active); }, [user, active]);
         <header>
           <div><h1>{active}</h1></div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-  <span
-    style={{
-      width: 34,
-      height: 34,
-      borderRadius: "50%",
-      background: "#2F6FED",
-      color: "#fff",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      flexShrink: 0,
-    }}
-  >
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="8" r="4" fill="currentColor" />
-      <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" fill="currentColor" />
-    </svg>
-  </span>
-  <div style={{ display: "flex", flexDirection: "column" }}>
-    <span style={{ fontSize: 15, fontWeight: 700, color: "#14213D" }}>{user.name}</span>
-    <span style={{ fontSize: 13, color: "#7C8698" }}>{user.role}</span>
-  </div>
-</div>
+            <span
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: "50%",
+                background: "#2F6FED",
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="8" r="4" fill="currentColor" />
+                <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" fill="currentColor" />
+              </svg>
+            </span>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: "#14213D" }}>{user.name}</span>
+              <span style={{ fontSize: 13, color: "#7C8698" }}>{user.role}</span>
+            </div>
+          </div>
         </header>
 
         {error && <p className="error">{error}</p>}
@@ -830,8 +865,8 @@ useEffect(() => { if (user) load(active); }, [user, active]);
                 request(`/api/queries/${q.query_id}/escalate`, { method: "POST" })
                   .then(() => load(active))
                   .catch((e) => setError(e.message))
-                }
-              />
+              }
+            />
           </>
         )}
       </main>

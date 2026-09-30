@@ -1,5 +1,6 @@
 """Protected role-aware API used by all dashboard views."""
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Literal
 import io
 
@@ -89,6 +90,20 @@ except ImportError:  # pragma: no cover
 from .security import current_user
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
+LOCAL_TZ = ZoneInfo("Asia/Karachi")
+
+def local_date(value):
+    """Supabase stores UTC; return the calendar date in Pakistan time."""
+    if not value:
+        return None
+    moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(LOCAL_TZ).date()
+
+def pdf_safe(text):
+    """The built-in PDF fonts are Latin-1 only; replace other characters with '?'."""
+    return str(text or "").encode("latin-1", "replace").decode("latin-1")
 
 class Assignment(BaseModel): user_id: str
 class StatusChange(BaseModel): status: Literal["Pending", "In Progress", "Resolved", "Escalated"]
@@ -236,20 +251,23 @@ def escalate(query_id: str, escalated_to_role: str = "HOD", user=Depends(user_fr
 
 @router.post("/queries/{query_id}/return")
 def return_to_staff(query_id: str, user=Depends(allow("Admin", "HOD"))):
+    row = one(query_id)
+    if not can_view(row, user):
+        raise HTTPException(403, "Query is outside your scope")
     db().table("queries").update({"status":"In Progress", "updated_at":datetime.now(timezone.utc).isoformat()}).eq("query_id", query_id).execute(); log(user["user_id"], f"Returned {query_id}")
     return one(query_id)
 
 @router.get("/dashboard/stats")
 def stats(user=Depends(user_from_claims)):
     rows = [q for q in db().table("queries").select("*").execute().data if can_view(q, user)]
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now(LOCAL_TZ).date()
     return {
         "total": len(rows),
         "pending": sum(q["status"] == "Pending" for q in rows),
         "in_progress": sum(q["status"] == "In Progress" for q in rows),
         "escalated": sum(q["status"] == "Escalated" for q in rows),
         "reassigned": sum(q["status"] == "Reassigned by HOD" for q in rows),
-        "resolved_today": sum(q["status"] == "Resolved" and str(q.get("resolved_at", "")).startswith(today) for q in rows),
+        "resolved_today": sum(q["status"] == "Resolved" and local_date(q.get("resolved_at")) == today for q in rows),
     }
 
 @router.get("/analytics")
@@ -339,41 +357,50 @@ def list_departments(user=Depends(user_from_claims)):
 
 @router.get("/reports/daily")
 def daily_report(user=Depends(allow("Admin", "HOD"))):
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now(LOCAL_TZ).date()
     rows = [q for q in db().table("queries").select("*").execute().data
-            if str(q.get("created_at", ""))[:10] == today]
+            if local_date(q.get("created_at")) == today]
 
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 10, f"Daily Queries Report - {today}", ln=True)
+    pdf.cell(0, 10, f"Daily Queries Report - {today.isoformat()}", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 10)
     pdf.ln(4)
     for q in rows:
-        line = f"{q.get('subject', '')[:50]} | {q.get('student_email', '')} | {q.get('category') or 'N/A'} | {q.get('status')}"
-        pdf.multi_cell(0, 7, line)
+        line = (f"{(q.get('subject') or '')[:50]} | {q.get('student_email') or ''} | "
+                f"{q.get('category') or 'N/A'} | {q.get('status')}")
+        pdf.multi_cell(0, 7, pdf_safe(line), new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
-    pdf.cell(0, 10, f"Total queries today: {len(rows)}", ln=True)
+    pdf.cell(0, 10, f"Total queries today: {len(rows)}", new_x="LMARGIN", new_y="NEXT")
 
     buf = io.BytesIO(bytes(pdf.output()))
     buf.seek(0)
     return StreamingResponse(
         buf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="daily_report_{today}.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="daily_report_{today.isoformat()}.pdf"'},
     )
 
 
 @router.post("/queries/{query_id}/reassign")
 def reassign_by_hod(query_id: str, payload: ReassignInput, user=Depends(allow("HOD"))):
-    one(query_id)
+    row = one(query_id)
+    if not can_view(row, user):
+        raise HTTPException(403, "Query is outside your scope")
+    if not payload.comment.strip():
+        raise HTTPException(400, "A comment is required")
+    if payload.target != "ADMIN":
+        valid = {d["dept_id"] for d in db().table("departments").select("dept_id").execute().data}
+        if payload.target not in valid:
+            raise HTTPException(400, "Unknown department")
     update = {
         "status": "Reassigned by HOD",
         "escalated_to_role": None,
         "hod_comment": payload.comment,
         "updated_at": datetime.now(timezone.utc).isoformat(),
+        "dept_id": None if payload.target == "ADMIN" else payload.target,
     }
-    update["dept_id"] = None if payload.target == "ADMIN" else payload.target
     db().table("queries").update(update).eq("query_id", query_id).execute()
     log(user["user_id"], f"Reassigned {query_id} to {payload.target}")
     return one(query_id)
