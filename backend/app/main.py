@@ -7,7 +7,7 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as grequests
 from google import genai
 from apscheduler.schedulers.background import BackgroundScheduler  # type: ignore[reportMissingImports]
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import os
 import json
 from .security import issue_session
@@ -114,22 +114,9 @@ app.add_middleware(
 )
 
 def check_for_escalations():
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-
-    stuck = supabase.table("queries") \
-        .select("*").eq("status", "Pending").lt("created_at", cutoff).execute()
-
-    for q in stuck.data:
-        supabase.table("queries").update({
-            "status": "Escalated",
-            "escalated_to_role": "HOD",
-        }).eq("query_id", q["query_id"]).execute()
-        supabase.table("escalation_record").insert({
-            "query_id": q["query_id"],
-            "reason": "No response within 24 hours",
-        }).execute()
-
-    print(f"Escalation check ran — {len(stuck.data)} quer(ies) escalated.")
+    result = supabase.rpc("escalate_stale_queries").execute()
+    escalated_count = result.data or 0
+    print(f"Escalation check ran — {escalated_count} quer(ies) escalated.")
 def classify_and_route(query_id: str, subject: str, query_text: str):
     try:
         classification = classify_query(subject, query_text)

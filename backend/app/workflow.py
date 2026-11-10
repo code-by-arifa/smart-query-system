@@ -187,6 +187,9 @@ def user_values(payload: UserInput):
 def can_view(row, user):
     if user["role"] == "Admin":
         return True
+    # HODs need to retain visibility after routing a query to a department.
+    if user["role"] == "HOD" and row.get("status") == "Reassigned by HOD":
+        return True
     if row.get("status") == "Escalated" and row.get("escalated_to_role") == user["role"]:
         return True
     if user["role"] in ("Department", "Instructor"):

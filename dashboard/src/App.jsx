@@ -115,7 +115,7 @@ function QueryTable({ queries, deptNames, open, escalate, viewerRole }) {
                   : "Not routed"}
                 </td>
                 <td>
-                  <span className={badge(q.status)}>{q.status === "Escalated" && viewerRole === "HOD" ? "Action Required" : viewerRole === "Admin" && q.status === "Reassigned by HOD"? `Reassigned to ${deptNames[q.dept_id] || "Unknown"}`: q.status}</span>
+                  <span className={badge(q.status)}>{q.status === "Escalated" && viewerRole === "HOD" ? "Action Required" : q.status === "Reassigned by HOD" ? `Reassigned to ${q.dept_id ? deptNames[q.dept_id] || "Unknown" : "Admin"}` : q.status}</span>
                 </td>
                 <td className="actions">
                   {q.status !== "Resolved" && <button onClick={() => open(q)}>✎</button>}
@@ -243,7 +243,7 @@ const forwardQuery = async () => {
             <dd>{query.dept_id ? (deptNames[query.dept_id] || "Routed") : "Not routed"}</dd>
             
             <dt>Status</dt>
-            <dd><span className={badge(query.status)}>{query.status === "Escalated" && user.role === "HOD"? "Action Required": user.role === "Admin" && query.status === "Reassigned by HOD"? `Reassigned to ${deptNames[query.dept_id] || "Unknown"}`: query.status}</span></dd>
+            <dd><span className={badge(query.status)}>{query.status === "Escalated" && user.role === "HOD" ? "Action Required" : query.status === "Reassigned by HOD" ? `Reassigned to ${query.dept_id ? deptNames[query.dept_id] || "Unknown" : "Admin"}` : query.status}</span></dd>
           </dl>
           {actionMessage && <p className="success-message">{actionMessage}</p>}
           {actionError && <p className="error">{actionError}</p>}
@@ -736,7 +736,7 @@ export default function App() {
         setQueries(
           user && (user.role === "HOD" || user.role === "Admin")
             ? all
-            : all.filter((q) => q.status !== "Escalated" && q.status !== "Reassigned by HOD")
+            : all.filter((q) => q.status !== "Escalated")
         );
       }
     } catch (e) {
